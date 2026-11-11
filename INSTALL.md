@@ -53,23 +53,23 @@ If `~/.claude/skills/nuea-ai-boq-takeoff` already exists, this is an update. Ask
 yes, fetch first, then move the old copy out and copy the new one in, as one command:
 
 ```bash
-SRC="$(mktemp -d)" && git clone --depth 1 --branch v1.0.0 https://github.com/HaNorthRich/nuea-ai-boq-takeoff-skill.git "$SRC/repo" && mv ~/.claude/skills/nuea-ai-boq-takeoff ~/.claude/nuea-ai-boq-takeoff.bak-$(date +%Y%m%d-%H%M%S) && cp -R "$SRC/repo/nuea-ai-boq-takeoff" ~/.claude/skills/
+SRC="$(mktemp -d)" && git clone --depth 1 --branch v1.0.1 https://github.com/HaNorthRich/nuea-ai-boq-takeoff-skill.git "$SRC/repo" && mv ~/.claude/skills/nuea-ai-boq-takeoff ~/.claude/nuea-ai-boq-takeoff.bak-$(date +%Y%m%d-%H%M%S) && cp -R "$SRC/repo/nuea-ai-boq-takeoff" ~/.claude/skills/
 ```
 
 A first install (with git):
 
 ```bash
-[ ! -e ~/.claude/skills/nuea-ai-boq-takeoff ] && SRC="$(mktemp -d)" && git clone --depth 1 --branch v1.0.0 https://github.com/HaNorthRich/nuea-ai-boq-takeoff-skill.git "$SRC/repo" && mkdir -p ~/.claude/skills && cp -R "$SRC/repo/nuea-ai-boq-takeoff" ~/.claude/skills/
+[ ! -e ~/.claude/skills/nuea-ai-boq-takeoff ] && SRC="$(mktemp -d)" && git clone --depth 1 --branch v1.0.1 https://github.com/HaNorthRich/nuea-ai-boq-takeoff-skill.git "$SRC/repo" && mkdir -p ~/.claude/skills && cp -R "$SRC/repo/nuea-ai-boq-takeoff" ~/.claude/skills/
 ```
 
 Without git:
 
 ```bash
-[ ! -e ~/.claude/skills/nuea-ai-boq-takeoff ] && SRC="$(mktemp -d)" && curl -fsSL https://github.com/HaNorthRich/nuea-ai-boq-takeoff-skill/archive/refs/tags/v1.0.0.tar.gz | tar -xz -C "$SRC" && mkdir -p ~/.claude/skills && cp -R "$SRC"/nuea-ai-boq-takeoff-skill-1.0.0/nuea-ai-boq-takeoff ~/.claude/skills/
+[ ! -e ~/.claude/skills/nuea-ai-boq-takeoff ] && SRC="$(mktemp -d)" && curl -fsSL https://github.com/HaNorthRich/nuea-ai-boq-takeoff-skill/archive/refs/tags/v1.0.1.tar.gz | tar -xz -C "$SRC" && mkdir -p ~/.claude/skills && cp -R "$SRC"/nuea-ai-boq-takeoff-skill-1.0.1/nuea-ai-boq-takeoff ~/.claude/skills/
 ```
 
 An update without git: move the old copy out first (`mv ~/.claude/skills/nuea-ai-boq-takeoff ~/.claude/nuea-ai-boq-takeoff.bak-$(date +%Y%m%d-%H%M%S)`), then run the command above.
-The commands install the tagged release `v1.0.0`; a newer tag is listed in CHANGELOG.md of the repository.
+The commands install the tagged release `v1.0.1`; a newer tag is listed in CHANGELOG.md of the repository.
 
 - **Check:** `head -3 ~/.claude/skills/nuea-ai-boq-takeoff/SKILL.md` shows `name: nuea-ai-boq-takeoff`.
 

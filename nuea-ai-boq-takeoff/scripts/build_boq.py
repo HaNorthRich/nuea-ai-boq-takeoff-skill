@@ -192,7 +192,8 @@ def ops(d, blank=False):
 
     F = lambda r: f'=IF($K{r}="{CUSTOMER}","(ลูกค้าจัดหา)",IF(OR($C{r}="",$E{r}=""),"",ROUND($C{r}*$E{r},2)))'
     H = lambda r: f'=IF(OR($C{r}="",$G{r}=""),"",ROUND($C{r}*$G{r},2))'
-    I = lambda r: f'=IF(AND($F{r}="",$H{r}=""),"",N($F{r})+N($H{r}))'
+    # SUM skips text cells; N() and the "--" trick are not understood by every spreadsheet app (Apple Numbers drops them)
+    I = lambda r: f'=IF(AND($F{r}="",$H{r}=""),"",SUM($F{r},$H{r}))'
     info_sheet = "ข้อมูลโครงการ"
     has_info = not blank and any(d.get(k) for k in ("facts", "key", "pieces"))   # a blank template carries no house data
     names = [s["name"] for s in d["sheets"]]
@@ -232,18 +233,18 @@ def ops(d, blank=False):
                 r += 1
             b = r - 1
             put(f"A{r}", [["", f"รวม {code} {sname}", None, None, None, f"=SUM(F{a}:F{b})", None, f"=SUM(H{a}:H{b})",
-                           f"=N(F{r})+N(H{r})", None, None]])
+                           f"=SUM(F{r},H{r})", None, None]])
             band(f"A{r}:K{r}", MINT, INK)
             cmd("home.borders", range=f"A{r}:K{r}", preset="top", style="thin")
             sec_totals.append(r)
             r += 2
         last_item = r - 1
-        s_sum = lambda col: "=" + "+".join(f"N({col}{t})" for t in sec_totals)
-        put(f"A{r}", [["", f'รวม{sheet["name"]}ทั้งหมด', None, None, None, s_sum("F"), None, s_sum("H"), f"=N(F{r})+N(H{r})", None, None]])
+        s_sum = lambda col: "=SUM(" + ",".join(f"{col}{t}" for t in sec_totals) + ")"
+        put(f"A{r}", [["", f'รวม{sheet["name"]}ทั้งหมด', None, None, None, s_sum("F"), None, s_sum("H"), f"=SUM(F{r},H{r})", None, None]])
         band(f"A{r}:K{r}", GREEN)
         cmd("home.fontSize", range=f"A{r}:K{r}", size=12)
         put(f"A{r+1}", [["", "มูลค่างานที่ลูกค้าจัดหาเอง (ไม่รวมในยอดข้างบน)", None, None, None,
-                         f'=SUMPRODUCT(--($K{first_item}:$K{last_item}="{CUSTOMER}"),$C{first_item}:$C{last_item},$E{first_item}:$E{last_item})',
+                         f'=SUMPRODUCT(($K{first_item}:$K{last_item}="{CUSTOMER}")*$C{first_item}:$C{last_item}*$E{first_item}:$E{last_item})',
                          None, None, None, None, None]])
         cmd("home.italic", range=f"A{r+1}:K{r+1}", on=True)
         cmd("home.fontColor", range=f"A{r+1}:K{r+1}", color=MUTED)
@@ -276,22 +277,22 @@ def ops(d, blank=False):
     cmd("home.alignCenter", range="A11:F11")
     for i, name in enumerate(names):
         t, r = totals[name][0], 12 + i
-        put(f"A{r}", [[str(i + 1), name, f"='{name}'!F{t}", f"='{name}'!H{t}", f"=N(C{r})+N(D{r})", f'=IF($E$16=0,"",E{r}/$E$16)']])
+        put(f"A{r}", [[str(i + 1), name, f"='{name}'!F{t}", f"='{name}'!H{t}", f"=SUM(C{r},D{r})", f'=IF($E$16=0,"",E{r}/$E$16)']])
     put("A16", [["", "รวมราคางานก่อสร้าง", "=SUM(C12:C15)", "=SUM(D12:D15)", "=SUM(E12:E15)", '=IF(E16=0,"",1)']])
     band("A16:F16", MINT, INK)
     put("B18", [["ค่าดำเนินการ", rates["overhead"], None, "=ROUND($E$16*C18,2)"], ["กำไรบริหารงาน", rates["profit"], None, "=ROUND($E$16*C19,2)"],
-                ["รวมก่อนภาษีมูลค่าเพิ่ม", None, None, "=E16+N(E18)+N(E19)"], ["ภาษีมูลค่าเพิ่ม (VAT)", rates["vat"], None, "=ROUND(E20*C21,2)"]])
+                ["รวมก่อนภาษีมูลค่าเพิ่ม", None, None, "=SUM(E16,E18,E19)"], ["ภาษีมูลค่าเพิ่ม (VAT)", rates["vat"], None, "=ROUND(E20*C21,2)"]])
     put("A22", [["ราคารวมทั้งสิ้น", None, None, None, "=E20+E21", None]])
     band("A22:F22", NAVY, size=13)
     put("A23", [["", "(ตัวอักษร)", "=BAHTTEXT(E22)"]])
     cmd("home.mergeAcross", range="C23:F23")
     cmd("home.italic", range="C23", on=True)
-    put("B24", [["พื้นที่ใช้สอย", None if blank else d["floor_area"], "ตร.ม."], ["ราคาต่อตารางเมตร", '=IF(N(C24)=0,"",ROUND(E22/C24,0))', "บาท/ตร.ม."]])
+    put("B24", [["พื้นที่ใช้สอย", None if blank else d["floor_area"], "ตร.ม."], ["ราคาต่อตารางเมตร", '=IF(C24=0,"",ROUND(E22/C24,0))', "บาท/ตร.ม."]])
     if np_rows:
         put("E25", [[f"⚠ ยังไม่รวม {len(np_rows)} รายการที่ไม่มีราคา"]])
         cmd("home.fontColor", range="E25", color=AMBER)
     cmd("home.bold", range="B25:C25", on=True)
-    put("B26", [["มูลค่าที่ลูกค้าจัดหาเอง (ไม่รวมในยอด)", "=" + "+".join(f"N('{n}'!F{totals[n][1]})" for n in names), "บาท"]])
+    put("B26", [["มูลค่าที่ลูกค้าจัดหาเอง (ไม่รวมในยอด)", "=SUM(" + ",".join(f"'{n}'!F{totals[n][1]}" for n in names) + ")", "บาท"]])
     notes = [] if blank else list(d.get("notes") or [])
     notes = ["เอกสารนี้เป็นใบประมาณราคาเบื้องต้นจากโมเดล 3 มิติ ปริมาณและราคาเป็นค่าประมาณ ยังไม่ผ่านการตรวจของวิศวกรหรือผู้ประมาณราคา (QS) "
              "ไม่ใช่ใบเสนอราคาและไม่ใช่เอกสารประกอบสัญญาจนกว่าผู้รับผิดชอบจะตรวจและลงนาม"] + notes
