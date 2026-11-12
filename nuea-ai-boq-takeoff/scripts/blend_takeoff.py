@@ -5,13 +5,16 @@
 
 Prints a compact Markdown summary and writes every measure to the JSON. Names follow the nuea-ai-blender-house skill: walls in "<PROJ> Walls", openings in "<PROJ> Openings",
 Roof_* parts, Str_* structure, Slab/Floor/Ceiling. Anything else is listed under "## other" with its size, so no object is lost.
+The "## Source" line, before the walls, says which kind of model it is (construction model with STnn stages, sales model, or another model).
 All lengths m, areas m2, volumes m3, world space, modifiers applied.
 """
 import fnmatch
 import json
 import math
+import os
 import re
 import sys
+import tempfile
 
 import bmesh
 import bpy
@@ -195,6 +198,60 @@ def classify(o, cols):
     return "other"
 
 
+STAGE = re.compile(r"(?:^|\s)ST(\d{2})(?:\s|$)")
+
+
+def source(col_names, blend_dir):
+    """The nuea-ai-blender-house naming is the channel's mark in the file: '<PROJ> STnn <name>' stage collections
+    (construction model) or '<PROJ> Walls' / '<PROJ> Openings' (sales model). Spec files sit beside the .blend."""
+    stages = sorted({m.group(1) for m in map(STAGE.search, col_names) if m})
+    specs, with_table = [], 0
+    if blend_dir and os.path.isdir(blend_dir):
+        try:
+            names = os.listdir(blend_dir)
+        except OSError:
+            names = []
+        specs = sorted(f for f in names
+                       if fnmatch.fnmatch(f, "ST[0-9][0-9]_*_spec.md") and os.path.isfile(os.path.join(blend_dir, f)))
+        for f in specs:
+            try:
+                with open(os.path.join(blend_dir, f), encoding="utf-8", errors="replace") as fh:
+                    with_table += bool(re.search(r"^## ปริมาณ", fh.read(), re.M))
+            except OSError:
+                pass   # unreadable: counted as a spec without a table, the take-off goes on
+    walls = {c[:-len(" Walls")] for c in col_names if c.endswith(" Walls")}
+    opens = {c[:-len(" Openings")] for c in col_names if c.endswith(" Openings")}
+    if stages:
+        kind = "construction"
+    elif walls & opens:   # the skill makes both for one project; another tool's "Exterior Walls" alone is not its mark
+        kind = "sales"
+    else:
+        kind = "other"
+    return dict(kind=kind, stages=stages, specs=len(specs), specs_with_table=with_table)
+
+
+SOURCE_TEXT = {
+    "construction": "nuea-ai-blender-house construction model, built stage by stage: read the stage quantity tables first",
+    "construction_no_specs": "nuea-ai-blender-house construction model, built stage by stage, but no STnn spec files "
+                             "beside the .blend: ask the user where they are, else take quantities from the measures below",
+    "construction_old_specs": "nuea-ai-blender-house construction model, built stage by stage; its spec files have no "
+                              "## ปริมาณ table (older format): read their quantities and cross-check with the measures below",
+    "sales": "nuea-ai-blender-house sales model (Walls/Openings collections, no STnn stages): structure, rebar, pipes "
+             "and wiring are not modelled",
+    "other": "not made with nuea-ai-blender-house: objects are sorted by name and size only",
+}
+
+
+def source_line(src, known, total):
+    kind = src["kind"]
+    if kind == "construction" and not src["specs_with_table"]:
+        kind = "construction_old_specs" if src["specs"] else "construction_no_specs"
+    stages = f" · stages {' '.join('ST' + s for s in src['stages'])}" if src["stages"] else ""
+    specs = (f" · {src['specs']} spec files beside the .blend, {src['specs_with_table']} with a ## ปริมาณ table"
+             if src["kind"] == "construction" or src["specs"] else "")
+    return f"## Source: {SOURCE_TEXT[kind]}{stages}{specs} · {known} of {total} objects recognised by name"
+
+
 def outside(bvh, p, ax, sgn, zs):
     """True when rays leaving p along ±axis hit no wall at every height in zs (one height may pass a window)."""
     d = Vector((0.0, 0.0, 0.0))
@@ -364,8 +421,9 @@ def group_openings(items, walls, bvh):
     return sorted(out, key=lambda o: (o["kind"], -o["w"] * o["h"]))
 
 
-def report(rows, openings, lights, assets):
+def report(rows, openings, lights, assets, src):
     P = print
+    P(source_line(src, sum(x["cls"] != "other" for x in rows), len(rows)))
     walls = [w for w in rows if w["cls"] == "wall"]
     P("## Walls (net = one face, openings removed · ext = face area outdoors)")
     for t in sorted({w["thickness"] for w in walls}):
@@ -455,6 +513,28 @@ def selftest():
     assert by["Roof_Hip"]["top_edge"] == 4.0 and by["Roof_Hip"]["rake"] == r(2 * 3 / math.cos(math.radians(30))), by["Roof_Hip"]
     assert by["Roof_Mirror_Hip"]["area"]["slope"] == by["Roof_Hip"]["area"]["slope"], by["Roof_Mirror_Hip"]
     assert by["Roof_Mirror_Hip"]["eave"] == 4.0, by["Roof_Mirror_Hip"]
+    sales = source([c.name for c in sc.children_recursive], "")
+    assert sales["kind"] == "sales" and "sales model" in source_line(sales, 3, 5), sales
+    other = source(["Collection", "BEST01 x", "Exterior Walls"], "")
+    assert other["kind"] == "other" and "not made with" in source_line(other, 3, 5), other
+    with tempfile.TemporaryDirectory() as d:
+        for f, text in (("ST01_footings_spec.md", "# ST01\n\n## ปริมาณ\n| a |\n"), ("ST03_beams_spec.md", "# ST03\n"),
+                        ("notes.md", "## ปริมาณ\n")):
+            with open(os.path.join(d, f), "w", encoding="utf-8") as fh:
+                fh.write(text)
+        os.mkdir(os.path.join(d, "ST02_folder_spec.md"))   # a folder with a spec's name is skipped, not an error
+        s = source(["E42 ST01 ฐานราก", "E42 ST03 คานคอดิน", "E42 Walls"], d)
+        assert s == dict(kind="construction", stages=["01", "03"], specs=2, specs_with_table=1), s
+        line = source_line(s, 3, 5)
+        assert "read the stage quantity tables first · stages ST01 ST03 · 2 spec files" in line, line
+        assert line.endswith("3 of 5 objects recognised by name"), line
+    with tempfile.TemporaryDirectory() as d:
+        with open(os.path.join(d, "ST12_conduit_spec.md"), "w", encoding="utf-8") as fh:
+            fh.write("# ST12\n\n## ตารางท่อ\n")
+        old = source(["E42 ST12 ไฟฟ้า"], d)
+        assert "older format" in source_line(old, 3, 5) and "1 spec files" in source_line(old, 3, 5), old
+    bare = source(["E42 ST01 ฐานราก"], "")
+    assert "no STnn spec files" in source_line(bare, 3, 5) and "0 spec files" in source_line(bare, 3, 5), bare
     print("SELFTEST OK")
 
 
@@ -463,7 +543,9 @@ def main():
         selftest()
         return
     rows, openings, lights, assets = measure()
-    report(rows, openings, lights, assets)
+    src = source([c.name for c in bpy.context.scene.collection.children_recursive],
+                 os.path.dirname(bpy.path.abspath(bpy.data.filepath)))
+    report(rows, openings, lights, assets, src)
     out = arg("--out")
     if out and (not out.lower().endswith(".json") or bpy.path.abspath(out) == bpy.data.filepath):
         sys.exit("blend_takeoff: --out must be a .json file, not the model")
@@ -471,7 +553,7 @@ def main():
         for x in rows:
             x["lo"], x["hi"] = [r(v) for v in x["lo"]], [r(v) for v in x["hi"]]
         with open(out, "w", encoding="utf-8") as f:
-            json.dump(dict(file=bpy.path.basename(bpy.data.filepath), objects=rows, openings=openings, lights=lights, assets=assets),
+            json.dump(dict(file=bpy.path.basename(bpy.data.filepath), source=src, objects=rows, openings=openings, lights=lights, assets=assets),
                       f, ensure_ascii=False, indent=1)
         print(f"WROTE {out}")
 
